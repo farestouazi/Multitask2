@@ -18,4 +18,4 @@ Recréation en Java d'une version PC offline du jeu Multitask 2 (IcyLime, 2011).
 
 ## Équipe
 - [Fares](https://github.com/farestouazi)
-- [Mohamed](https://github.com/)
+- [Mohamed](https://github.com/mohamednazihnouri-code)
