@@ -1,14 +1,14 @@
 package multitask2.view;
 
-import multitask2.model.Model;
+import multitask2.controller.Screen;
 
-/** Interface de la vue générale chargée de représenter visuellement le modèle de la partie. */
+/** Interface de la vue générale chargée de représenter visuellement l'écran courant. */
 public interface View {
 
   /**
-   * Dessine une image correspondant à l'état courant du modèle.
+   * Dessine une image correspondant à l'écran courant.
    *
-   * @param model modèle dont l'état doit être affiché
+   * @param screen écran dont l'état doit être affiché
    */
-  void render(Model model);
+  void render(Screen screen);
 }

@@ -4,7 +4,7 @@ import com.github.forax.zen.ApplicationContext;
 import com.github.forax.zen.KeyboardEvent;
 import com.github.forax.zen.KeyboardEvent.Action;
 
-import multitask2.model.Model;
+import java.util.Objects;
 import multitask2.view.View;
 
 /**
@@ -22,7 +22,8 @@ public final class Controller {
   private static final double MAX_DT = 0.05;
 
   /** Modèle contenant l'état des mini-jeux. */
-  private final Model model;
+  /** Écran courant : menu, partie ou fin de partie. */
+  private Screen screen;
   /** Vue chargée d'afficher l'état courant du modèle. */
   private final View view;
   /** État des touches maintenues et nouvellement pressées. */
@@ -40,10 +41,10 @@ public final class Controller {
    * @param view    vue à redessiner à chaque image
    * @param context contexte dans lequel les événements clavier sont récupérés
    */
-  public Controller(Model model, View view, ApplicationContext context) {
-    this.model = model;
-    this.view = view;
-    this.context = context;
+  public Controller(Screen screen, View view, ApplicationContext context) {
+	this.screen = Objects.requireNonNull(screen);
+	this.view = Objects.requireNonNull(view);
+	this.context = Objects.requireNonNull(context);
     input = new Input();
     running = false;
     super();
@@ -70,9 +71,10 @@ public final class Controller {
       lastTime = now;
 
       pollInput();
-      running = model.update(dt, input);
+      screen = screen.update(dt, input);
+      running = !screen.finished();
       input.nextFrame();
-      view.render(model);
+      view.render(screen);
 
       sleepUntilNextFrame(now);
     }
