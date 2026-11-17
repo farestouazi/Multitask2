@@ -1,132 +1,166 @@
 package multitask2.model.games;
 
 import com.github.forax.zen.KeyboardEvent.Key;
-
+import java.util.random.RandomGenerator;
 import multitask2.controller.Input;
 import multitask2.model.Game;
 
-/**
- * Mini-jeu d'équilibre : le joueur incline une planche et doit empêcher une
- * bille de sortir de ses limites.
- *
- * <p>
- * Les flèches gauche et droite règlent l'inclinaison. La gravité fait accélérer
- * la bille dans le sens de l'inclinaison, tandis qu'un facteur de friction
- * atténue sa vitesse.
- * </p>
- */
 public final class Balance implements Game {
 
   /** Demi-longueur de la piste, en unités du modèle. */
   public static final double TRACK_HALF_LENGTH = 50;
   /** Valeur absolue maximale de l'inclinaison de la planche, en degrés. */
-  public static final double MAX_TILT_DEGREES = 35;
+  public static final double MAX_TILT_DEGREES = 50;
+  /** Rayon de la bille, en unités du modèle (20 px sur une planche de 450 px). */
+  public static final double BALL_RADIUS = 20.0 * TRACK_HALF_LENGTH / 225.0;
+  /** Profondeur (axe y vers le bas) à laquelle la bille est considérée comme perdue. */
+  public static final double FALL_END_Y = 80;
 
-  /** Vitesse de variation de l'inclinaison, en degrés par seconde. */
-  private static final double TILT_SPEED_DEG_PER_SEC = 90;
+  /** Distance au-delà du bord à partir de laquelle la bille tombe. */
+  private static final double EDGE_MARGIN = BALL_RADIUS / 2;
+
+  /** Vitesse de rotation maximale quand une touche est enfoncée, en degrés par seconde. */
+  private static final double MAX_TURN_SPEED_DEG_PER_SEC = 115;
+  /** Rapidité avec laquelle la vitesse de rotation rejoint sa cible (inertie). */
+  private static final double INPUT_SMOOTHING = 3.0;
+  /** Force avec laquelle la position de la bille fait pencher la planche. */
+  private static final double BALL_WEIGHT = 0.39;
+  /** Amortissement de la rotation pour éviter que la planche ne s'emballe. */
+  private static final double ROTATION_DAMPING = 4.0;
+
   /** Accélération gravitationnelle de base utilisée par la simulation. */
-  private static final double GRAVITY = 55;
-  /** Coefficient de réduction de la vitesse appliqué à chaque mise à jour. */
-  private static final double FRICTION = 0.995;
+  private static final double GRAVITY = 110;
+  /** Frottement de la bille, par seconde. */
+  private static final double FRICTION = 0.8;
+  /** Amplitude des secousses aléatoires appliquées à la bille. */
+  private static final double NOISE = 45;
 
-  /** Position longitudinale de la bille sur la piste, centrée en zéro. */
+  private static final RandomGenerator RANDOM = RandomGenerator.getDefault();
+
+  /** Position longitudinale de la bille sur la planche, centrée en zéro. */
   private double position;
   /** Vitesse longitudinale de la bille. */
   private double speed;
   /** Inclinaison actuelle de la planche, en degrés. */
   private double tilt;
+  /** Vitesse de rotation de la planche, en degrés par seconde. */
+  private double angularVelocity;
+
+  /** Vrai quand la bille a quitté la planche et tombe dans le vide. */
+  private boolean falling;
+  /** Position de la bille en chute, relative au centre de la planche (y vers le bas). */
+  private double fallX, fallY;
+  /** Vitesse de la bille en chute. */
+  private double fallVx, fallVy;
 
   /**
-   * Crée un jeu avec la bille au centre, immobile, et une planche horizontale.
+   * Crée un jeu avec la bille au centre, planche horizontale, et une légère
+   * impulsion aléatoire initiale sur la bille.
    */
   public Balance() {
     position = 0;
-    speed = 0;
+    speed = (RANDOM.nextDouble() - 0.5) * 13;
     tilt = 0;
+    angularVelocity = 0;
+    falling = false;
+    fallX = 0;
+    fallY = 0;
+    fallVx = 0;
+    fallVy = 0;
     super();
   }
 
-  /**
-   * Met à jour les commandes d'inclinaison, la dynamique de la bille et vérifie
-   * les limites.
-   *
-   * @param dt         durée du pas de simulation, en secondes
-   * @param input      état des entrées clavier
-   * @param difficulty niveau de difficulté global
-   * @return {@code true} tant que la bille reste dans les limites de la piste ;
-   *         {@code false} si elle dépasse l'une de ces limites
-   * @throws IllegalArgumentException si {@code dt} ou {@code difficulty} est
-   *                                  négatif
-   * @throws NullPointerException     si {@code input} est {@code null}
-   */
   @Override
   public boolean update(double dt, Input input, double difficulty) {
     Game.checkInput(dt, input, difficulty);
 
     readInput(dt, input);
+    rotatePlank(dt);
+    if (falling) {
+      fall(dt);
+      return fallY < FALL_END_Y;
+    }
     positionAndSpeed(dt, difficulty);
-    return checkBorder();
+    checkBorder();
+    return true;
+  }
+
+  /** Calcule la vitesse de rotation visée par le joueur et s'en rapproche progressivement. */
+  private void readInput(double dt, Input input) {
+    var dir = (input.isKeyDown(Key.LEFT) ? -1 : 0) + (input.isKeyDown(Key.RIGHT) ? 1 : 0);
+    var target = dir * MAX_TURN_SPEED_DEG_PER_SEC;
+    angularVelocity += (target - angularVelocity) * INPUT_SMOOTHING * dt;
   }
 
   /**
-   * Modifie l'inclinaison selon les touches gauche et droite maintenues, sans
-   * dépasser les angles autorisés. En l'absence de ces touches, l'inclinaison
-   * reste inchangée.
-   *
-   * @param dt    durée du pas de simulation, en secondes
-   * @param input état des entrées clavier
+   * Applique le poids de la bille (tant qu'elle est sur la planche),
+   * l'amortissement, puis met à jour l'inclinaison.
    */
-  private void readInput(double dt, Input input) {
-    var dir = (input.isKeyDown(Key.LEFT) ? -1 : 0) + (input.isKeyDown(Key.RIGHT) ? 1 : 0);
-    if (dir != 0) {
-      tilt = Game.dontExceed(tilt + dir * TILT_SPEED_DEG_PER_SEC * dt, MAX_TILT_DEGREES);
+  private void rotatePlank(double dt) {
+    if (!falling) {
+      angularVelocity += position * BALL_WEIGHT * dt;
+    }
+    angularVelocity *= Math.max(0, 1 - ROTATION_DAMPING * dt);
+
+    var wanted = tilt + angularVelocity * dt;
+    tilt = Game.dontExceed(wanted, MAX_TILT_DEGREES);
+    if (tilt != wanted) {
+      angularVelocity = 0; // la planche est en butée
     }
   }
 
-  /**
-   * Calcule l'accélération liée à l'inclinaison, puis intègre la vitesse et la
-   * position de la bille. La difficulté augmente l'accélération gravitationnelle
-   * appliquée.
-   *
-   * @param dt         durée du pas de simulation, en secondes
-   * @param difficulty niveau de difficulté global
-   */
   private void positionAndSpeed(double dt, double difficulty) {
-    var acceleration = GRAVITY * Math.sin(Math.toRadians(tilt)) * (1 + difficulty / 4);
-    speed += acceleration * dt;
-    speed *= FRICTION;
+    var factor = 1 + difficulty / 4;
+    speed += GRAVITY * Math.sin(Math.toRadians(tilt)) * factor * dt;
+    speed += (RANDOM.nextDouble() - 0.5) * NOISE * factor * dt;
+    speed *= Math.max(0, 1 - FRICTION * dt);
     position += speed * dt;
   }
 
-  /**
-   * Limite la position de la bille aux bords de la piste et détermine si elle les
-   * a franchis.
-   *
-   * @return {@code true} si la position n'a pas été corrigée par la limitation,
-   *         {@code false} si la bille a dépassé un bord
-   */
-  private boolean checkBorder() {
-    var old = position;
-    position = Game.dontExceed(position, TRACK_HALF_LENGTH);
-    return old == position;
+  /** Si la bille dépasse le bord, elle quitte la planche et passe en chute libre. */
+  private void checkBorder() {
+    if (Math.abs(position) <= TRACK_HALF_LENGTH + EDGE_MARGIN) {
+      return;
+    }
+    falling = true;
+    var angle = Math.toRadians(tilt);
+    var cos = Math.cos(angle);
+    var sin = Math.sin(angle);
+    // on tourne le point (position, -rayon) de l'angle de la planche
+    fallX = position * cos + BALL_RADIUS * sin;
+    fallY = position * sin - BALL_RADIUS * cos;
+    // la bille partait dans la direction de la planche
+    fallVx = speed * cos;
+    fallVy = speed * sin;
   }
 
-  /**
-   * Retourne la position longitudinale courante de la bille.
-   *
-   * @return position de la bille, comprise entre les limites de la piste après
-   *         une mise à jour
-   */
+  /** Chute libre de la bille dans le repère de l'écran. */
+  private void fall(double dt) {
+    fallVy += GRAVITY * dt;
+    fallX += fallVx * dt;
+    fallY += fallVy * dt;
+  }
+
   public double position() {
     return position;
   }
 
-  /**
-   * Retourne l'inclinaison courante de la planche.
-   *
-   * @return inclinaison en degrés
-   */
   public double tilt() {
     return tilt;
+  }
+
+  /** Retourne {@code true} si la bille a quitté la planche. */
+  public boolean isFalling() {
+    return falling;
+  }
+
+  /** Abscisse de la bille en chute, relative au centre de la planche. */
+  public double fallX() {
+    return fallX;
+  }
+
+  /** Ordonnée de la bille en chute, relative au centre de la planche (vers le bas). */
+  public double fallY() {
+    return fallY;
   }
 }

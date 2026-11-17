@@ -8,11 +8,13 @@ import multitask2.controller.Controller;
 import multitask2.model.Game;
 import multitask2.model.Model;
 import multitask2.model.games.Balance;
+import multitask2.model.games.Circle;
 import multitask2.model.games.Avoid;
 import multitask2.view.GeneralView;
 import multitask2.view.Viewers;
 import multitask2.view.games.AvoidView;
 import multitask2.view.games.BalanceView;
+import multitask2.view.games.CircleView;
 import multitask2.view.games.GameView;
 
 /**
@@ -57,6 +59,7 @@ public final class Main {
     var viewers = new Viewers();
     addGame(model, viewers, new Balance(), 0, BalanceView::new);
     addGame(model, viewers, new Avoid(), 5, AvoidView::new);
+    addGame(model, viewers, new Circle(), 5, CircleView::new);
 
     var view = new GeneralView(context, viewers);
     var controller = new Controller(model, view, context);
