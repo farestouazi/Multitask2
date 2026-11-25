@@ -17,14 +17,10 @@ public final class CircleView implements GameView {
   private static final Color ARC_COLOR = new Color(0x837801);
 
   /** Zoom fixe : 1 px par unité du modèle, soit tes pixels d'origine. */
-  private static final double REF_HALF_SIZE = Circle.SPAWN_DISTANCE; // cercle d'apparition
-  private static final double MARGIN = 10;
-  private static final double ZOOM_RATIO = 1.0;
+  private static final double PX_PER_UNIT = 1.0;
 
   /** Épaisseur de l'arc, en unités du modèle. */
-  private static final double ARC_THICKNESS = 14;
-  
-  /** Réglage manuel : 1.0 = zoom automatique, 0.8 = 20 % plus petit, etc. */
+  private static final double ARC_THICKNESS = 10;
 
   private final Circle circle;
 
@@ -32,12 +28,6 @@ public final class CircleView implements GameView {
     Objects.requireNonNull(circle);
     this.circle = circle;
     super();
-  }
-
-  private static double zoom(Rectangle area, double refHalfW, double refHalfH, double margin) {
-    var fitW = (area.width / 2.0 - margin) / refHalfW;
-    var fitH = (area.height / 2.0 - margin) / refHalfH;
-    return Math.max(0.05, Math.min(1.0, Math.min(fitW, fitH))) * ZOOM_RATIO;
   }
 
   @Override
@@ -55,7 +45,8 @@ public final class CircleView implements GameView {
       g.fillRect(area.x, area.y, area.width, area.height);
 
       // zoom fixe : indépendant de la taille de la zone
-      var pxPerUnit = zoom(area, REF_HALF_SIZE, REF_HALF_SIZE, MARGIN);
+      var pxPerUnit = PX_PER_UNIT;
+
       var cx = area.x + area.width / 2.0;
       var cy = area.y + area.height / 2.0;
 
@@ -63,7 +54,7 @@ public final class CircleView implements GameView {
       var radius = Circle.ARC_RADIUS * pxPerUnit;
       g.setColor(ARC_COLOR);
       g.setStroke(new BasicStroke((float) (ARC_THICKNESS * pxPerUnit),
-          BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+                                  BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
       g.draw(new Arc2D.Double(cx - radius, cy - radius, 2 * radius, 2 * radius,
                               circle.angle(), Circle.ARC_ANGLE_DEGREES, Arc2D.OPEN));
 

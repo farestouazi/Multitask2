@@ -11,11 +11,11 @@ import multitask2.model.Game;
 public final class Circle implements Game {
 
   /** Rayon de l'arc, en unités du modèle (le centre du jeu est en (0, 0)). */
-  public static final double ARC_RADIUS = 65;
+  public static final double ARC_RADIUS = 50;
   /** Ouverture de l'arc plein, en degrés (le reste est la trouée). */
-  public static final double ARC_ANGLE_DEGREES = 280;
+  public static final double ARC_ANGLE_DEGREES = 270;
   /** Distance du centre à laquelle apparaissent les fusées. */
-  public static final double SPAWN_DISTANCE = 250;
+  public static final double SPAWN_DISTANCE = 280;
 
   /** Nombre maximal de fusées en même temps. */
   private static final int MAX_ROCKETS = 3;
@@ -32,22 +32,13 @@ public final class Circle implements Game {
   /** Vitesse maximale des fusées. */
   private static final double MAX_ROCKET_SPEED = 350;
   /** Vitesse initiale, très faible pour laisser la courbe exponentielle démarrer. */
-  private static final double INITIAL_ROCKET_SPEED = 0.000001;
+  private static final double INITIAL_ROCKET_SPEED = 0.01;
   /** Force de l'accélération exponentielle des fusées. */
-  private static final double EXPONENTIAL_GROWTH_RATE = 1.5;
+  private static final double EXPONENTIAL_GROWTH_RATE = 2.0;
   /** Distance au centre à laquelle la fusée s'arrête. */
   private static final double STOP_DISTANCE = 8;
-  
-  /** Durée du fondu d'apparition d'une fusée, en secondes. */
-  private static final double APPEAR_DURATION = 0.5;
-  /** Temps pendant lequel la fusée reste immobile après son apparition (fondu inclus), en secondes. */
-  private static final double SPAWN_HOLD = 1.0;
-
-  private static final double FADE_DURATION = 0.2;
-  private static final double INITIAL_HOLD_DURATION = 0;
-  private static final double MIN_HOLD_DURATION = 0;
-  
-  private static final double HOLD_DECAY_PER_SECOND = 0.01;
+  /** Durée du fondu d'une fusée arrêtée au centre, en secondes. */
+  private static final double FADE_DURATION = 0.6;
 
   private static final RandomGenerator RANDOM = RandomGenerator.getDefault();
 
@@ -61,10 +52,6 @@ public final class Circle implements Game {
     /** Vrai quand la fusée a atteint le centre et s'est arrêtée. */
     private boolean arrived;
     private double fadeTime;
-    /** Temps écoulé depuis l'apparition de la fusée, en secondes. */
-    private double age;
-    /** Durée d'attente de cette fusée, fixée à son arrivée au centre. */
-    private double hold = INITIAL_HOLD_DURATION;
 
     private Rocket(double x, double y, double dirX, double dirY) {
       this.x = x;
@@ -89,11 +76,8 @@ public final class Circle implements Game {
     }
 
     /** Opacité : 1 en vol, puis décroît jusqu'à 0 pendant le fondu. */
-    /** Opacité : fondu à l'apparition, puis fondu à la disparition une fois arrivée au centre. */
     public double opacity() {
-      var appear = Math.min(1, age / APPEAR_DURATION);
-      var disappear = arrived ? Math.max(0, 1 - fadeTime / FADE_DURATION) : 1;
-      return Math.min(appear, disappear);
+      return Math.max(0, 1 - fadeTime / FADE_DURATION);
     }
   }
 
@@ -105,8 +89,6 @@ public final class Circle implements Game {
   private final List<Rocket> rockets;
   /** Temps restant avant la prochaine tentative d'apparition, en secondes. */
   private double spawnTimer;
-  /** Temps de jeu écoulé, en secondes. */
-  private double elapsed;
 
   /** Crée un jeu avec un arc orienté au hasard ; la première fusée arrive tout de suite. */
   public Circle() {
@@ -114,7 +96,6 @@ public final class Circle implements Game {
     angularVelocity = 0;
     rockets = new ArrayList<>();
     spawnTimer = 0;
-    elapsed = 0;
     super();
   }
 
@@ -123,22 +104,17 @@ public final class Circle implements Game {
     Game.checkInput(dt, input, difficulty);
 
     var factor = 1 + difficulty / 4;
-    elapsed += dt;
-    var hold = Math.max(MIN_HOLD_DURATION, INITIAL_HOLD_DURATION - elapsed * HOLD_DECAY_PER_SECOND);
     readInput(dt, input);
     trySpawn(dt);
 
     var hit = false;
     for (var rocket : rockets) {
-      moveRocket(rocket, dt, factor, hold);
+      moveRocket(rocket, dt, factor);
       if (hitsArc(rocket)) {
         hit = true;
       }
     }
-    rockets.removeIf(rocket ->
-    rocket.arrived
-        ? rocket.fadeTime >= rocket.hold + FADE_DURATION
-        : Math.hypot(rocket.x, rocket.y) > SPAWN_DISTANCE + 50);
+    rockets.removeIf(rocket -> rocket.fadeTime >= FADE_DURATION);
     return !hit;
   }
 
@@ -163,7 +139,7 @@ public final class Circle implements Game {
     if (spawnTimer > 0) {
       return;
     }
-    if (rockets.stream().filter(r -> !r.arrived).count() < MAX_ROCKETS) {
+    if (rockets.size() < MAX_ROCKETS) {
       spawnRocket();
     }
     spawnTimer = MIN_SPAWN_INTERVAL + RANDOM.nextDouble() * (MAX_SPAWN_INTERVAL - MIN_SPAWN_INTERVAL);
@@ -178,19 +154,7 @@ public final class Circle implements Game {
   }
 
   /** Accélération exponentielle puis déplacement ; à l'arrivée la fusée s'arrête et s'efface. */
-  private static void moveRocket(Rocket rocket, double dt, double factor, double hold) {
-    rocket.age += dt;
-
-    if (rocket.arrived) {
-      rocket.fadeTime += dt;
-      return;
-    }
-
-    // la fusée reste immobile pendant l'attente
-    if (rocket.age < SPAWN_HOLD) {
-      return;
-    }
-    
+  private static void moveRocket(Rocket rocket, double dt, double factor) {
     if (rocket.arrived) {
       rocket.fadeTime += dt;
       return;
@@ -199,24 +163,17 @@ public final class Circle implements Game {
     rocket.speed += (1.0 + rocket.speed * EXPONENTIAL_GROWTH_RATE) * factor * dt;
     rocket.speed = Math.min(rocket.speed, MAX_ROCKET_SPEED * factor);
 
-    var distance = Math.hypot(rocket.x, rocket.y);
-    var step = rocket.speed * dt;
+    rocket.x += rocket.dirX * rocket.speed * dt;
+    rocket.y += rocket.dirY * rocket.speed * dt;
 
-    if (distance - step <= STOP_DISTANCE) {
-      var stopAt = Math.min(distance, STOP_DISTANCE);
-      rocket.x = -rocket.dirX * stopAt;
-      rocket.y = -rocket.dirY * stopAt;
+    if (Math.hypot(rocket.x, rocket.y) < STOP_DISTANCE) {
       rocket.arrived = true;
       rocket.fadeTime = 0;
-      rocket.hold = hold;
-      return;
     }
-
-    rocket.x += rocket.dirX * step;
-    rocket.y += rocket.dirY * step;
   }
+
   /**
-   * Teste la collision une seule fois, au moment où la fusée franchitu le rayon de l'arc.
+   * Teste la collision une seule fois, au moment où la fusée franchit le rayon de l'arc.
    * Retourne {@code true} si elle touche la partie pleine de l'arc.
    */
   private boolean hitsArc(Rocket rocket) {

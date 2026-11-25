@@ -12,7 +12,7 @@ public final class Balance implements Game {
   /** Valeur absolue maximale de l'inclinaison de la planche, en degrés. */
   public static final double MAX_TILT_DEGREES = 50;
   /** Rayon de la bille, en unités du modèle (20 px sur une planche de 450 px). */
-  public static final double BALL_RADIUS = 21.0 * TRACK_HALF_LENGTH / 225.0;
+  public static final double BALL_RADIUS = 20.0 * TRACK_HALF_LENGTH / 225.0;
   /** Profondeur (axe y vers le bas) à laquelle la bille est considérée comme perdue. */
   public static final double FALL_END_Y = 80;
 
